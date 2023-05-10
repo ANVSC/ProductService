@@ -1,0 +1,54 @@
+******************************************************************
+Exception Handling :
+1. First Create a custom Exception which we are going to throw when there is any exception.
+@Data
+public class ProductServiceCustomException extends RuntimeException{
+    private String errorCode;
+    public ProductServiceCustomException (String message, String errorCode)
+    {
+        super(message);
+        this.errorCode = errorCode;
+    }
+}
+
+2. Add a Response class , and this is the class which we are going to send as response whenever there are any exception.
+@Data
+@NoArgsConstructor
+@AllArgsConstructor
+@Builder
+public class ErrorResponse {
+    private String errorMessage;
+    private String errorCode;
+}
+
+3.
+    a. Inorder to return a errorResonse whenever there are any exception occurs or
+    Inorder to return a errorResonse whenever we throw an exception, we need a controller advice
+    which will send response back and this controller advice class extends ResponseEntityExceptionHandler..
+    b. Add a method in controller advice which can handle exception which occured.
+    c. Here our exception is ProductServiceCustomException, so anotate that method with
+     @ExceptionHandler(ProductServiceCustomException.class)
+
+     @ControllerAdvice
+     public class RestResponseEntityExceptionHandler extends ResponseEntityExceptionHandler {
+         @ExceptionHandler(ProductServiceCustomException.class)
+         public ResponseEntity<ErrorResponse> handleProductServiceException (ProductServiceCustomException exception){
+             return new ResponseEntity<>(new ErrorResponse().builder()
+                     .errorCode(exception.getErrorCode())
+                     .errorMessage(exception.getMessage())
+                     .build(), HttpStatus.NOT_FOUND );
+         }
+     }
+
+4. Now throw this exception whereever you want it.
+   @Override
+    public ProductResponse getProductById(long productId) {
+        log.info("Get the product for productID");
+        Product product = productRepository.findById(productId)
+                .orElseThrow(()-> new ProductServiceCustomException("Product with the given Id is not found","PRODUCT_NOT_FOUND"));
+        ProductResponse productResponse = new ProductResponse();
+        copyProperties(product,productResponse);
+        return productResponse;
+    }
+
+*****************************************************************************************************
