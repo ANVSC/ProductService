@@ -1,0 +1,17 @@
+server:
+  port: 8080
+spring:
+  datasource:
+    url: jdbc:mysql://${DB_HOST:localhost}:3306/productdb
+    username: root
+    password: Inspiron15
+    driver-class-name: com.mysql.jdbc.Driver
+  cloud:
+    refresh:
+      bootstrapRegistry:
+        enabled: false
+  jpa:
+    data-platform: org.hibernate.dialect.MySQL57InnoDBDialect
+    show-sql: true
+    hibernate:
+      ddl-auto: update
