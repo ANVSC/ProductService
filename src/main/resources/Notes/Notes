@@ -1,3 +1,19 @@
+Steps :
+1. Creating a product service &order service and giving them names and making them to run in different ports
+2. Creating a service registry and adding configuration in it (comments added ) such that any service can come and connect to me.
+3. Adding eureka configuration to it.
+    eureka:
+      instance:
+        prefer-ip-address: true
+      client:
+        fetch-registry: true
+        register-with-eureka: true
+        service-url:
+          defaultZone: ${EUREKA_SERVER_ADRESS:http://localhost:8761/eureka}
+
+
+
+
 ******************************************************************
 Exception Handling :
 1. First Create a custom Exception which we are going to throw when there is any exception.
