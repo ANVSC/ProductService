@@ -1,7 +1,17 @@
+https://github.com/shabbirdwd53?tab=repositories
+Order of starting applications : Service-Registry -> Config-Server -> Product Service -> Order Service
 Steps :
 1. Creating a product service &order service and giving them names and making them to run in different ports
 2. Creating a service registry and adding configuration in it (comments added ) such that any service can come and connect to me.
-3. Adding eureka configuration to it.
+    #Eureka server configuration
+    eureka:
+      instance:
+        hostname: localhost # we are going to run eureka server on localhost
+      client:
+        register-with-eureka: false #WE dont want this application(service-registry to register with itself as it is a server not a client
+        fetch-registry: false # This will tell that this is a server and other clients can come and register with this. So we are setting it to false so that it will not register itself
+
+3. Adding eureka configuration product service and order service so that they will connect to eurka server.
     eureka:
       instance:
         prefer-ip-address: true
@@ -11,8 +21,134 @@ Steps :
         service-url:
           defaultZone: ${EUREKA_SERVER_ADRESS:http://localhost:8761/eureka}
 
+4. So there are eureka configuration in both product and order services.
+It is the same configuration. So we need to avoid it.
+        a. We add a new cofiguration in some where like github which is going to add as centralized repository.
+        b. Now we can pass or generate this configuration from github using a config server.
+        c This config server will get all the configurations from the centralized repository (here it is github)
+        and can pass all the configuration to all the services registered to this service registry.
+        d. Here in our services there are only few lines of cofiguration is present, but in real-time there can be
+        hundered's or thousand's of lines of code will be present.
+        In such cases this config server and centralized repository will play a huge role
+        as we cannot go to each of the service and write this configuration as there can be 100's of services.
+5. create a springboot project for confg server with the dependencies Config Server and Eureka Discovery Client
+6. Open up the project and then add @EnableConfigServer to the main application
+7. Create a new github repo to store the config. Here in my ANVSC github I am using a name "spring-app-config"
+8. Then add that uri to the config-server application.yaml as show below and add alone-on-start as true
+such that everytime configserver application gets started , this repo will be cloned.
+spring:
+  application:
+    name: CONFIG-SERVER
+  cloud:
+    config:
+      server:
+        git:
+          uri: https://github.com/ANVSC/spring-app-config.git
+          clone-on-start: true
 
+9. Now add the eureka server client configuration to config-server. (take it from order service or productservice)
+10. Go to "spring-app-config" in githuib, create a new file with a name "application.yaml" and add this eureka server client
+ configuration in that application.yaml file.
 
+11. Till now, we have created order and product services. Also created service-registry which is used as server. Also
+we have added eureka client configuration in order and product service to connect to the server.
+We wanted to avoid adding this server configuration in both product and order service as it is reductant. To do so we have
+created a repository in github and added all the configurations in that repository namely "spring-app-config".
+After that we created a config-server which will fetch the configuration from the git-repo and adds it to the order and product service.
+In creating a config-server we have enabled @EnableConfigServer and added in yaml file to fetch config details from that repo.
+Now we have to make order and product service to use this ConfigServer to fetch the configuration. To do so,
+we have to implement config-client in both the services. This client will helps order and product services to connect to a
+spring-cloud configServer to fetch application config.
+
+12. Add the dependency Config Client from spring initializer
+
+13. If we order something using order service we have to go to  product service and then reduce the quantity of product there.
+To do so we have to create a reduceQuantity API in productService and then whenever a order is being placed by calling
+placeOrder API from order service, we have to call internally product service and then update the remaining products.
+So to call the product service from order service instead of RestTemplate we will be using Feign Client.
+
+Feign Client is a rest Client which allows to use the API calls using declarative function.
+Generally we will be calling a product service from order service like this : PUT->http://localhost:8080/product/1?...
+But instead of localhost:8080 we can say that PRODUCT-SERVICE as we have mentioned in service-registry.
+Therefore it becomes PUT-> http://PRODUCT-SERVICE/product/1.... so here we will not be bothered about which port number
+we are using etc and all as service registry will take care of them all.
+
+14. Now in Feign Client We have to declare an interface in order service with the name as ProductService which will be having
+method which will have API details to be called and that interfcae will be annotated with @FeignClient. This annotation will
+take care of the which url to be called and all.
+Dependecies to be added : OpenFeign.
+To Use Feign client we have to annotate order-service-application with @EnableFeignClients
+
+15. Generally in real time projects, we will have common-projects to reduce the redundancy.
+Like here we are going to decalre productservice feignclient configuration in order service in external
+package. Or may be we might use orderservice feignclient configuration in product service as well. Generally,
+all these configurations will be present in common-configrations, but here we will be using external folder to do so.
+If there is a requirement in product service to call order service, then we can have other external folder in product service
+as well.
+
+Feign Client confiiguration :
+
+    @FeignClient(name = "PRODUCT-SERVICE/product")
+    public interface ProductService {
+        @PutMapping("/reduceQuantity/{id}")
+        ResponseEntity<Void> reduceQuantity(@PathVariable("id") long productId , @RequestParam long quantity);
+    }
+a. Here @FeignClient is decalring that this is feignclient
+b. name= "PRODUCT-SERVICE/product" says that to which microservice it has to go. Here it is  PRODUCT-SERVICE(it is name given
+to product-service in application.yaml to represent the service instead of using localhost.)
+c. Inside product-service microservice to which controller it has to go. It is defined by /product in the name.
+d. Inside that controller, to which method it has to go, is given my this reduceQuantity method with that @Putmapping.
+    (Just copied method declaration from productserviceController)
+
+16. Now we got the configuration to call the API from product service, so just call the product service API in OrderServiceImpl
+            productService.reduceQuantity(orderRequest.getProductId(),orderRequest.getQuantity());
+
+This will work for positive scenarios. But if there is any exception happened in the product service and you will return
+productServiceCustomException kept in the object of ErrorResponse. This will make order-service throw 500 Internal error in
+order-service API as response.
+Whenever we have ErrorResponse as response from product-service,Somehow we have to make the order-service understand that
+we got error response from product-service, so we have to stop further execution of code and then have to return Another
+ErrorResponse from order-service to be displayed in postman.
+
+17. To do so, we have to implement CustomErrorDecoder implements ErrorDecoder from eign.codec.ErrorDecoder as follows. (go-to
+point 18 to understand the following code)
+
+@Log4j2
+public class CustomErrorDecoder implements ErrorDecoder {
+    @Override
+    public Exception decode(String s, Response response) {
+        ObjectMapper objectMapper = new ObjectMapper();
+        log.info("::{}",response.request().url());
+        log.info("::{}",response.request().headers());
+        try {
+            ErrorResponse  errorResponse = objectMapper.readValue(response.body().asInputStream(),ErrorResponse.class);
+            return new CustomException(errorResponse.getErrorMessage(),errorResponse.getErrorCode(),response.status());
+        } catch (IOException e) {
+            throw new CustomException("INTERNAL_SERVER_ERROR","INTERNAL_SERVER_ERROR",500);
+        }
+    }
+}
+
+18. Firstly create CustomException (used to throw in order-service whenever there is any exception) , RestResponseEntityExceptionHAndler
+(to be used as controller advice), ErrorResponse.class(Used to send response to user whenever there is any exception)
+    a. Read the response from product-service using objectMapper and then store it in errorResponse object.
+    b. Using this errorResponseObject build CustomExecption and return as a part of decode method.
+    c. Write a configuration class as follows.
+        @Configuration
+        public class FeignConfig {
+            @Bean
+            ErrorDecoder errorDecoder(){
+                return new CustomErrorDecoder();
+            }
+        }
+    d. Here is the full flow.
+    This configuration class will tell the orderservice that this CustomErrorDecoder.class is the class that you have to look
+    to decode the error if there is any error coming from the calling api. This CustomErrorDecoder implements ErrorDecoder
+    which is having decode method which will return CustomException.
+    e. When we have customException , controllerAdvice picks it up and returns the ErrorResponse.
+
+(Exception Handling flow : If there is exception, we throw CustomException , that CustomExeption will be picked by class having
+controlleradvice and then that controller advice will generate ErrorResponse and returns to the user.)
 
 ******************************************************************
 Exception Handling :
@@ -66,5 +202,7 @@ public class ErrorResponse {
         copyProperties(product,productResponse);
         return productResponse;
     }
+
+
 
 *****************************************************************************************************
