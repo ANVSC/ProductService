@@ -150,6 +150,48 @@ public class CustomErrorDecoder implements ErrorDecoder {
 (Exception Handling flow : If there is exception, we throw CustomException , that CustomExeption will be picked by class having
 controlleradvice and then that controller advice will generate ErrorResponse and returns to the user.)
 
+19. Zipkin and Sleuth : Now if we see this flow, a request came in or order service and order service took help of config-server to get the
+eureka server and using eureka server it called product service and a response came back to product service. Now if you trace
+the logs, we have to go through each service to observe the logs. And it would be difficult to identify which log is before and
+which log is after, if we are lucky enough there can be time printed but yet it is difficult.
+So it would be difficult to trace complete path a request went and response came back. To handle these scenarios, we are
+going to use "Zipkin and Sleuth " Log tracing tools to handle those kind of tracing.
+
+20. Zipkin and Sleuth : We will create a zipkin server and that zipkin server will maintain the logs. So whenever all those logs
+happen , all those logs will be distributed tiddly trace throughout all those different microservices and we will be able to
+know what particular log happened at what particular time.
+
+21. ZipKin server :
+    Strat Docker desktop and then run below command in command prompt
+    docker run -d -p 9411:9411 openzipkin/zipkin
+    This command will make zipkin server up and running, and you will see an image in docker
+    Now, open browser and go to http://localhost:9411/zipkin/
+    Now we have to add our applications to this zipkins server so that all the logs will be in-line.
+22. Firstly add below two dependencies for zipkin and sleuth in product and order service.
+        <dependency>
+			<groupId>org.springframework.cloud</groupId>
+			<artifactId>spring-cloud-starter-sleuth</artifactId>
+		</dependency>
+
+		<dependency>
+            <groupId>org.springframework.cloud</groupId>
+            <artifactId>spring-cloud-sleuth-zipkin</artifactId>
+        </dependency>
+
+
+23. Create PaymentService and add doPaymentAPI. Add FeignClient in Orderservice and then call paymentService's
+doPayment API while placing the order.
+
+24. Rest Template : Implementing follwing APIs to fetch respective details.
+    1. getOrderdetails - Fetching order details using order id from order service.
+    Inside this getOrderdetails, We want product details as well. We are already having an API in product service
+    which takes productId as parameter and gives us product details.
+    In order table we are having a column of product Id, so we can use it and get details of that product wrt
+    the given order.
+    GetOrderDetails API will now return orderdetails along with product details.
+
+25.  Rest Template :  Now to call this getProductAPI from order-service we are going to use rest template.
+
 ******************************************************************
 Exception Handling :
 1. First Create a custom Exception which we are going to throw when there is any exception.
