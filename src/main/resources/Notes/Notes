@@ -1,5 +1,6 @@
 https://github.com/shabbirdwd53?tab=repositories
 Order of starting applications : Service-Registry -> Config-Server -> Product Service -> Order Service
+-> Payment service -> Cloud Gateway
 Steps :
 1. Creating a product service &order service and giving them names and making them to run in different ports
 2. Creating a service registry and adding configuration in it (comments added ) such that any service can come and connect to me.
@@ -192,6 +193,189 @@ doPayment API while placing the order.
 
 25.  Rest Template :  Now to call this getProductAPI from order-service we are going to use rest template.
 
+26. API GateWay:
+Till now what we have done is we are having 3 services and we are calling them based on the requirement. i.e.,
+we will call order service if we need details of order and we will call payment service if we need payment details
+etc. based on its service name and port information.
+
+Lets assume all our 3 applications are present in a server. And different requests will be coming from different
+applications like mobile app, or web app etc. And to every one we cannot provide our server details and port info to
+access our application. All these requests are coming from public network. All these requests should be protected
+from public network to private network(where applications are deployed).
+
+So whatever requests are coming from these clients , cannot directly come to our order-service or to our product-service
+or to our payment-service. It have to be come by a service and that service is responsible to routing these requests
+to respective services, authenticating those requests, authorizing those requests etc.
+
+So there have to be only one single point of contact such that all the requests have to be intracted to and
+from that poc all the internal services are invoked.
+And that SPOC is called API Gateway.
+
+All the clients have to send requests to API gateway and API gateway will identify to  which service it have to send
+and then it will send that request to its internal services.
+
+And internally if order-service needs data of a payment-service, it can call directly payment-service using eureka server
+and there is no need of going through API gateway. This api gateway is only for handling external client requests.
+
+To create that project  we use spring cloud, , dependency requried - clould bootstrap and gateway, webFLux (Reactive ) ,
+ zipkin and SLuth, Lombok, Eureka Discovery Client, Springboot Actuator, Config client.
+
+27. in the application yml file of this Gateway service, we have to give port number, and make it register
+with configserver and then we have let it know that if a request comes having /order/** then route it to
+ORDER-SERVICE, if a request comes having /product/** then route it to  PRODUCT-SERVICE.
+Here is the configuration of it :
+server:
+  port: 9090
+
+spring:
+  application:
+    name: API-GATEWAY
+  config:
+    import: configserver:http://localhost:9296
+#Adding configuration for routing requests to different services
+  cloud:
+    gateway:
+      routes:
+        - id : ORDER-SERVICE
+          uri: lb://ORDER-SERVICE
+          predicates:
+            - Path=/order/**
+
+        - id: PRODUCT-SERVICE
+          uri: lb://PRODUCT-SERVICE
+          predicates:
+            - Path=/product/**
+
+        - id: PAYMENT-SERVICE
+          uri: lb://PAYMENT-SERVICE
+          predicates:
+            - Path=/payment/**
+
+
+28. Now instead of hitting localhost:8082/order/5 we can hit localhost:9090/order/5. In this way
+infornt of every service we are having a API gateway.
+
+29. CIRCUIT BREAKER : Lets  say we are having a current circuit. So if the circuit is closed then current flows
+and if circuit is open the current will stop.
+Based on same scenario, we we will implementing circuit breaker as well.
+
+Suppose, client is calling   API gateway to get order information, we are going to call orderservice and from order service we will be calling product
+service and payment service.
+Lets say, we are having order service is not working or product or payment service is not working.Then this
+circuit breaker will come to picture.
+
+Lets say we are having order service is down. Now we are having requests coming to API gateway and gateway is sending
+all the requests blindly to order service without checking orderservice is up and running or not.
+This will be waste of resources as order service is down, and API gateway will keep on hitting the orderservice.
+
+So what we can do is, we can have a mechanism where it can constantly check if the order service is
+up and running or not and if it is failing then lets not send all the requests to order service, lets wait for
+sometime to start that particular service up and when that service is up, then start sending requests to that service.
+
+We are going to use Resilience Forge Library. This library will allows us to implement circuit breaker in our
+architecture.
+
+How circuit breaker works?
+circuit breaker will have different states. And depending up on those states, it will handle all those scenarios.
+
+Lets say, I have to call orderservice from API gateway. Now we have to implement circuit breaker in API gateway.
+and that circuit breaker will handle all those scenarios for order service.
+Now, as we are calling product service from orderservice, we will implement circuit breaker for product service
+in order service.
+
+It will have 3 states, 1. Closed state 2.Open State 3.Half Open State. All these are connected in triangle.
+If entire circuit is closed, all the requests will be passed.
+If order service is down, then if a request comes, it will fail, 2nd request comes it will fail .....
+Now we can specify a number in the circuit breaker that if there are those number of requests failed, then
+circuit breaker will change the its state from closed to open and requests won't go from API gateway to orderservice.
+
+Now how much time the circuit have to be in open state ? For this thing we have to specify time interval.
+So after that time, circuit changes its state from open to Half-open. At this state, half of requests will pass
+through and half will be blocked.
+
+Now out of those half of requests which are passed, lets say we are haivng 5 requests passed. We have to know
+what is the success rate. Lets say we are having 60 to 70 percent of those passed requests are successful.
+then we can change state from half-open to closed state. Else we will go back to open state.
+
+I.e., if success rate is above the thurshold is change state to closed, else change to open.
+
+And whenever circuit breaker is open, we can call a fallback method which will return response back with
+specfic data.
+In the fallback method depending up onsituation we can return the response.
+Eg: if we are doing a payment and it failed, then we can spcify that the sevice is down, and will ask to try again later.
+If the service is retunring data by calling a database and now that service is down, we can try fetching data
+from caching etc.
+
+************** NOTE : We are not implementing circuit breaker , moving on to spring security
+
+Spring Security + Auth2 Authentication:
+
+30. Previously when there are monolithic applications, we used to create a session and for that particular interval
+in that session we will allow them to perform those operations.
+Now we are developing microservices, it is not possible to create session for each and every microservices.
+So what we do is we go to Auth2 authentication.
+
+There has to be a Authentication Server which takes a request containing credentials, and this Authentication server
+returns the Auth-Code. This Auth-Code will have  information like the credentials are valid , it will also have
+the info of all the information of Authorization, like if we have multiple roles available, then all the roles
+info will be available.
+
+This Auth-code will be the JWT token (JSON Web Token), this JWT will have 3 things.
+a. Header b. Body c Signature
+This JWT token will be Unique.
+This Auth-code will have a code and duration of which this code is valid.
+After that we have to generate a new code and we have to be passed that new code.
+After generating a code, it is the responsibility of the client to send that code as a part of request.
+Now when that request reaches our services, services will try to decode that JWT and makes sure that this
+request is valid and checkes authorizations and then will process the required information.
+Speaking of Authorization, in the JWT there will be role of user. We are having Order-service and now CUSTOMER
+is the role which can access all the services of order-service. So if the role present in the Auth-code is
+CUSTOMER , then only order-service will authorize that request to access order-service services.
+
+This kind of autorization in order--service is done using Auth2 using spring security.
+And coming to Authentication server, we will use OKTA library, a 3rd party Library.
+
+Complete flow :
+
+Outh2 will call send a request on the behalf of user by generating the code.
+
+Example : Lets say we are trying to login to Linkedin. Now we want to implement OAuth2. What we will do is we will go
+to linkedin login page and then click on "Sign-in with google". And it will allows us to login to linkedin
+and access services of linkedin.
+This "Sign-in with google" is Oauth2. So once we click it, this oauth2 will go to google , authenticate it  and
+generate a auth-code,, comes back and along with that code, it will go to linkedin , logs in and provides
+linkedin services as long as that code is valid.
+
+
+Now come to code of these services  :
+
+1. We will create a login API in our API gateway. this login API will go to OKTA and checks if there is
+this user present in OKTA and if yes then it will return all those permissions wrapped together as a JWT token
+back to API gateway.
+2. Now API gateway has that JWT token.
+3. Now that token will be send back to those clients.
+4. Clients are responsible to send that token in headers along with other requests to services.
+5. Lets say we are trying to hit order-service. Now in that order-service, order-service will decode that JWT
+token and gets all the information in it. Based on the permissions/Scopes in that JWT token,
+it will process the request.
+
+6. Lets say we are calling payment-service, this payment service cannot be called directly. Whenever we placed
+an order only , payment service is called. So, this payment service can only be called using internal scope.
+It cannot be called with other scope.If it is Internal request alone it will process that request.
+
+So depending up on the scope present in JWT token, requests gets processed.
+
+
+
+
+
+
+
+
+
+
+
+
 ******************************************************************
 Exception Handling :
 1. First Create a custom Exception which we are going to throw when there is any exception.
@@ -248,3 +432,4 @@ public class ErrorResponse {
 
 
 *****************************************************************************************************
+Till
